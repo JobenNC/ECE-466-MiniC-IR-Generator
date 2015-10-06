@@ -1,3 +1,10 @@
+
+/********************************
+Joseph Jarriel
+Ken Ackerman
+ECE 466 - Fall 2015
+********************************/
+
 %{
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,7 +83,6 @@ LLVMValueRef BuildFunction(LLVMTypeRef RetType, const char *name,
 %type <value> expression
 %type <value> assignment_expression
 %type <value> conditional_expression
-%type <value> constant_expression
 %type <value> logical_OR_expression
 %type <value> logical_AND_expression
 %type <value> inclusive_OR_expression
@@ -141,7 +147,6 @@ function_definition:	  type_specifier ID LPAREN param_list_opt RPAREN
   LLVMBasicBlockRef BB = LLVMGetInsertBlock(Builder);
   if(!LLVMGetBasicBlockTerminator(BB))
     {
-      printf("<-------Building ret 0 - 1\n");
       LLVMBuildRet(Builder,LLVMConstInt(LLVMInt32TypeInContext(Context),
 					0,(LLVMBool)1));
     }
@@ -164,7 +169,6 @@ function_definition:	  type_specifier ID LPAREN param_list_opt RPAREN
   LLVMBasicBlockRef BB = LLVMGetInsertBlock(Builder);
   if(!LLVMGetBasicBlockTerminator(BB))
     {
-      printf("<------Building ret 0 - 2\n");
       LLVMBuildRet(Builder,LLVMConstPointerNull(LLVMPointerType(LLVMInt32TypeInContext(Context),0)));
     }
 
@@ -335,15 +339,13 @@ continue_stmt:            CONTINUE SEMICOLON
 selection_stmt:		  
 		          IF LPAREN expression 
 { 
-    //JMJN
+    //build then and else blocks
     LLVMBasicBlockRef thenB = LLVMAppendBasicBlock(Function, "then.block");
     LLVMBasicBlockRef elseB = LLVMAppendBasicBlock(Function, "else.block");
 
     LLVMValueRef zero = LLVMConstInt(LLVMTypeOf($3),0,1); 
     LLVMValueRef cond = LLVMBuildICmp(Builder, LLVMIntNE, $3,
                                     zero,"cond");
-    //$$ = LLVMBuildSelect(Builder, $3, $5, $7, "");
-    //LLVMDumpVal($$);
 
     //  3. insert conditional branch
     LLVMBuildCondBr(Builder,cond,thenB,elseB);
@@ -360,6 +362,7 @@ selection_stmt:
 		          RPAREN statement
 {          
 
+    //recover else block, build jion block
     LLVMBasicBlockRef elseB = $<bb>4;
 
     LLVMBasicBlockRef joinB = LLVMAppendBasicBlock(Function, "join.block");
@@ -374,6 +377,7 @@ selection_stmt:
 
 		          ELSE statement 
 {
+    //recover join block
     LLVMBasicBlockRef joinB = $<bb>7;
     LLVMBuildBr(Builder, joinB);
     LLVMPositionBuilderAtEnd(Builder, joinB);
@@ -467,7 +471,6 @@ jump_stmt:		  RETURN SEMICOLON
 			| RETURN expression SEMICOLON
 {
   //JMJ2
-  printf("<-----Building my return stmt\n");
   LLVMBuildRet(Builder,$2);
 }
 ;
@@ -484,10 +487,8 @@ assignment_expression:    conditional_expression
 }
                         | lhs_expression ASSIGN assignment_expression
 {
-  //JMJ0
-  printf("<------found an assignment\n");
   /* Implemented */
-  //LLVMValueRef var = getValueForID($1);
+  //put on the stack
   $$ = LLVMBuildStore(Builder, $3, $1);
 }
 ;
@@ -499,13 +500,21 @@ conditional_expression:   logical_OR_expression
 }
                         | logical_OR_expression QUESTION_MARK expression COLON conditional_expression
 {
-  /* Implement */
+  /* Implemented */
+  //eval condition and buid a select
+
+    LLVMValueRef zero = LLVMConstInt(LLVMTypeOf($1),0,1); 
+    LLVMValueRef cond1 = LLVMBuildICmp(Builder, LLVMIntNE, $1,
+                                    zero,"cond");
+    LLVMValueRef tmp = LLVMBuildSExt(Builder, cond1, LLVMInt32TypeInContext(Context), "");
+    tmp = LLVMBuildNeg(Builder, tmp, "");
+
+    LLVMValueRef tmp2 = LLVMBuildSExt(Builder, $1, LLVMInt32TypeInContext(Context), "");
+
+    $$ = LLVMBuildSelect(Builder, $1, $3, $5, "");
 }
 ;
 
-constant_expression:       conditional_expression
-{ $$ = $1; }
-;
 
 logical_OR_expression:    logical_AND_expression
 {
@@ -513,7 +522,14 @@ logical_OR_expression:    logical_AND_expression
 }
                         | logical_OR_expression LOGICAL_OR logical_AND_expression
 {
-  /* Implement */
+  /* Implemented */
+  //Eval conditions and use bitwise OR
+    LLVMValueRef zero = LLVMConstInt(LLVMTypeOf($1),0,1); 
+    LLVMValueRef cond1 = LLVMBuildICmp(Builder, LLVMIntNE, $1,
+                                    zero,"cond");
+    LLVMValueRef cond2 = LLVMBuildICmp(Builder, LLVMIntNE, $3,
+                                    zero,"cond");
+    $$ = LLVMBuildOr(Builder, cond1, cond2, "");
 };
 
 logical_AND_expression:   inclusive_OR_expression
@@ -523,6 +539,7 @@ logical_AND_expression:   inclusive_OR_expression
                         | logical_AND_expression LOGICAL_AND inclusive_OR_expression
 {
   /* Implemented */
+  //Eval conditions and use bitwise AND
     LLVMValueRef zero = LLVMConstInt(LLVMTypeOf($1),0,1); 
     LLVMValueRef cond1 = LLVMBuildICmp(Builder, LLVMIntNE, $1,
                                     zero,"cond");
@@ -539,6 +556,7 @@ inclusive_OR_expression:  exclusive_OR_expression
                         | inclusive_OR_expression BITWISE_OR exclusive_OR_expression
 {
   /* Implemented */
+  //Build an OR
   $$ = LLVMBuildOr(Builder, $1, $3, "");
 }
 ;
@@ -550,6 +568,7 @@ exclusive_OR_expression:  AND_expression
                         | exclusive_OR_expression BITWISE_XOR AND_expression
 {
   /* Implemented */
+  //Build an XOR
   $$ = LLVMBuildXor(Builder, $1, $3, "");
 }
 ;
@@ -561,6 +580,7 @@ AND_expression:           equality_expression
                         | AND_expression AMPERSAND equality_expression
 {
   /* Implemented */
+  //Build an AND
   $$ = LLVMBuildAnd(Builder, $1, $3, "");
 }
 ;
@@ -572,13 +592,14 @@ equality_expression:      relational_expression
                         | equality_expression EQ relational_expression
 {
   /* Implemented: use icmp */
-  printf("<--- equality comp\n");
+  //Use equality icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntEQ, $1, $3, "");
 
 }
                         | equality_expression NEQ relational_expression
 {
   /* Implemented : use icmp */
+  //use inequality icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntNE, $1, $3, "");
 }
 ;
@@ -590,21 +611,25 @@ relational_expression:    shift_expression
                         | relational_expression LT shift_expression
 {
   /* Implemented : use icmp */
+  //less than icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntSLT, $1, $3, "");
 }
                         | relational_expression GT shift_expression
 {
   /* Implemented : use icmp */
+  //gt icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntSGT, $1, $3, "");
 }
                         | relational_expression LTE shift_expression
 {
   /* Implemented : use icmp */
+  //lte icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntSLE, $1, $3, "");
 }
                         | relational_expression GTE shift_expression
 {
   /* Implemented : use icmp */
+  //gte icmp
   $$ = LLVMBuildICmp(Builder, LLVMIntSGE, $1, $3, "");
 }
 ;
@@ -615,11 +640,15 @@ shift_expression:         additive_expression
 }
                         | shift_expression LSHIFT additive_expression
 {
-  /* Implement */
+  /* Implemented */
+  //build shift left instr
+  $$ = LLVMBuildShl(Builder, $1, $3, "");
 }
                         | shift_expression RSHIFT additive_expression
 {
-  /* Implement */
+  /* Implemented */
+  //build sign extending right shift instr
+  $$ = LLVMBuildAShr(Builder, $1, $3, "");
 }
 ;
 
@@ -630,12 +659,13 @@ additive_expression:      multiplicative_expression
                         | additive_expression PLUS multiplicative_expression
 {
   /* Implemented */
-  //JMJ1
+  //build add instr 
   $$ = LLVMBuildAdd(Builder, $1, $3, "");
 }
                         | additive_expression MINUS multiplicative_expression
 {
   /* Implemented */
+  //build sub instr
   $$ = LLVMBuildSub(Builder, $1, $3, "");
 }
 ;
@@ -647,16 +677,19 @@ multiplicative_expression:  cast_expression
                         | multiplicative_expression STAR cast_expression
 {
   /* Implemented */  
+  //build mult instr
   $$ = LLVMBuildMul(Builder, $1, $3, "");
 }
                         | multiplicative_expression DIV cast_expression
 {
   /* Implemented */
+  //build div instr
   $$ = LLVMBuildSDiv(Builder, $1, $3, "");
 }
                         | multiplicative_expression MOD cast_expression
 {
   /* Implemented */
+  //use srem to implement modulo
   $$ = LLVMBuildSRem(Builder, $1, $3, "");
 }
 ;
@@ -696,6 +729,7 @@ unary_expression:         postfix_expression
                         | AMPERSAND primary_expression
 {
   /* Implement */
+  /* Not doing pointers */
 }
                         | STAR primary_expression
 {
@@ -705,6 +739,7 @@ unary_expression:         postfix_expression
                         | MINUS unary_expression
 {
   /* Implemented */
+  //build neg instr
   $$ = LLVMBuildNeg(Builder, $2, "");
 }
                         | PLUS unary_expression
@@ -713,11 +748,22 @@ unary_expression:         postfix_expression
 }
                         | BITWISE_INVERT unary_expression
 {
-  /* Implement */
+  /* Implemented */
+  //use not instr
+    $$ = LLVMBuildNot(Builder, $2, "");
 }
                         | NOT unary_expression
 {
-  /* Implement */
+  /* Implemented */
+  //evan condition than invert
+
+    LLVMValueRef zero = LLVMConstInt(LLVMTypeOf($2),0,1); 
+    LLVMValueRef cond1 = LLVMBuildICmp(Builder, LLVMIntNE, $2,
+                                    zero,"cond");
+    LLVMValueRef tmp = LLVMBuildSExt(Builder, cond1, LLVMInt32TypeInContext(Context), "");
+    tmp = LLVMBuildNeg(Builder, tmp, "");
+
+    $$ = tmp;
 }
 ;
 
@@ -749,7 +795,7 @@ primary_expression:       ID
 
 constant:	          NUMBER  
 { 
-  /* Implement */
+  /* Implemented */
   $$ = LLVMConstInt(LLVMInt32TypeInContext(Context),$1,(LLVMBool)1);
 } 
 ;
